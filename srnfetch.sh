@@ -1,151 +1,268 @@
 #!/usr/bin/env bash
 
+# ============================================================
 # SRNFetch
-# Simple Neofetch-style Linux system information tool
+# Simple Linux system information fetcher
+# ============================================================
 
-set -u
+set -o pipefail
 
 # -------------------------
 # Colors
 # -------------------------
-RESET='\033[0m'
-BOLD='\033[1m'
-CYAN='\033[36m'
-BLUE='\033[34m'
-MAGENTA='\033[35m'
-WHITE='\033[37m'
-GREEN='\033[32m'
+ESC=$'\033'
+
+RESET="${ESC}[0m"
+BOLD="${ESC}[1m"
+DIM="${ESC}[2m"
+
+RED="${ESC}[31m"
+GREEN="${ESC}[32m"
+YELLOW="${ESC}[33m"
+BLUE="${ESC}[34m"
+MAGENTA="${ESC}[35m"
+CYAN="${ESC}[36m"
+WHITE="${ESC}[37m"
 
 # -------------------------
-# System information
+# Helpers
 # -------------------------
-USER_NAME="$(whoami)"
-HOST_NAME="$(hostname)"
+info() {
+    printf "%s%-16s%s %s\n" "${CYAN}" "$1" "${RESET}" "$2"
+}
 
-if [ -f /etc/os-release ]; then
+section() {
+    printf "\n%s%s%s\n" "${BOLD}${MAGENTA}" "$1" "${RESET}"
+    printf "%s\n" "----------------------------------------"
+}
+
+command_exists() {
+    command -v "$1" >/dev/null 2>&1
+}
+
+# -------------------------
+# User / Host
+# -------------------------
+USER_NAME="$(id -un 2>/dev/null || echo unknown)"
+HOST_NAME="$(hostname 2>/dev/null || echo unknown)"
+
+# -------------------------
+# OS
+# -------------------------
+if [ -r /etc/os-release ]; then
     . /etc/os-release
-    OS="${PRETTY_NAME:-Linux}"
+    OS_NAME="${PRETTY_NAME:-${NAME:-Linux}}"
 else
-    OS="Linux"
+    OS_NAME="Linux"
 fi
 
-KERNEL="$(uname -r)"
-ARCH="$(uname -m)"
+# -------------------------
+# Kernel
+# -------------------------
+KERNEL="$(uname -r 2>/dev/null || echo unknown)"
+ARCH="$(uname -m 2>/dev/null || echo unknown)"
 
-CPU="$(
-    awk -F: '/model name/ {
-        gsub(/^[ \t]+/, "", $2);
-        print $2;
-        exit
-    }' /proc/cpuinfo
-)"
-CPU="${CPU:-Unknown CPU}"
+# -------------------------
+# CPU
+# -------------------------
+CPU="Unknown"
+
+if [ -r /proc/cpuinfo ]; then
+    CPU="$(awk -F: '
+        /model name/ {
+            gsub(/^[ \t]+/, "", $2)
+            print $2
+            exit
+        }
+        /Hardware/ {
+            gsub(/^[ \t]+/, "", $2)
+            print $2
+            exit
+        }
+    ' /proc/cpuinfo)"
+fi
+
+CPU="${CPU:-Unknown}"
 
 CORES="$(nproc 2>/dev/null || echo "?")"
 
-if command -v free >/dev/null 2>&1; then
-    RAM_USED="$(free -h | awk '/^Mem:/ {print $3}')"
+# -------------------------
+# RAM
+# -------------------------
+if command_exists free; then
     RAM_TOTAL="$(free -h | awk '/^Mem:/ {print $2}')"
+    RAM_USED="$(free -h | awk '/^Mem:/ {print $3}')"
+    RAM_AVAILABLE="$(free -h | awk '/^Mem:/ {print $7}')"
 else
-    RAM_USED="?"
     RAM_TOTAL="?"
+    RAM_USED="?"
+    RAM_AVAILABLE="?"
 fi
 
-if command -v df >/dev/null 2>&1; then
-    DISK_USED="$(df -h / | awk 'NR==2 {print $3}')"
+# -------------------------
+# Disk
+# -------------------------
+if command_exists df; then
     DISK_TOTAL="$(df -h / | awk 'NR==2 {print $2}')"
+    DISK_USED="$(df -h / | awk 'NR==2 {print $3}')"
+    DISK_FREE="$(df -h / | awk 'NR==2 {print $4}')"
     DISK_PERCENT="$(df -h / | awk 'NR==2 {print $5}')"
 else
-    DISK_USED="?"
     DISK_TOTAL="?"
+    DISK_USED="?"
+    DISK_FREE="?"
     DISK_PERCENT="?"
 fi
 
-UPTIME="$(uptime -p 2>/dev/null || echo "Unknown")"
-SHELL_NAME="$(basename "${SHELL:-unknown}")"
-TERM_NAME="${TERM:-unknown}"
+# -------------------------
+# GPU
+# -------------------------
+GPU="Not detected"
 
-GPU="Unknown"
-
-if command -v lspci >/dev/null 2>&1; then
-    GPU="$(
-        lspci 2>/dev/null |
+if command_exists lspci; then
+    GPU="$(lspci 2>/dev/null |
         grep -Ei 'VGA compatible controller|3D controller|Display controller' |
         sed -E 's/.*: //' |
-        head -n 1
-    )"
+        head -n 1)"
 fi
 
-GPU="${GPU:-Unknown}"
+GPU="${GPU:-Not detected}"
 
+# -------------------------
+# Uptime
+# -------------------------
+UPTIME="$(uptime -p 2>/dev/null || echo unknown)"
+
+# -------------------------
+# Shell
+# -------------------------
+SHELL_NAME="$(basename "${SHELL:-unknown}")"
+
+# -------------------------
+# Terminal
+# -------------------------
+TERMINAL="${TERM:-unknown}"
+
+# -------------------------
+# Package manager
+# -------------------------
 PACKAGE_MANAGER="Unknown"
 
-if command -v apt >/dev/null 2>&1; then
+if command_exists apt; then
     PACKAGE_MANAGER="APT"
-elif command -v dnf >/dev/null 2>&1; then
+elif command_exists dnf; then
     PACKAGE_MANAGER="DNF"
-elif command -v pacman >/dev/null 2>&1; then
+elif command_exists yum; then
+    PACKAGE_MANAGER="YUM"
+elif command_exists pacman; then
     PACKAGE_MANAGER="Pacman"
-elif command -v apk >/dev/null 2>&1; then
+elif command_exists apk; then
     PACKAGE_MANAGER="APK"
+elif command_exists zypper; then
+    PACKAGE_MANAGER="Zypper"
 fi
 
 # -------------------------
-# Logo
+# Architecture / virtualization
 # -------------------------
-LOGO=(
-"        ███████╗██████╗ ███╗   ██╗"
-"        ██╔════╝██╔══██╗████╗  ██║"
-"        ███████╗██████╔╝██╔██╗ ██║"
-"        ╚════██║██╔══██╗██║╚██╗██║"
-"        ███████║██║  ██║██║ ╚████║"
-"        ╚══════╝╚═╝  ╚═╝╚═╝  ╚═══╝"
-""
-"        ${BOLD}SRNFETCH${RESET}"
-"        Linux System Information"
-)
+VIRTUALIZATION="Unknown"
 
-# -------------------------
-# Information
-# -------------------------
-INFO=(
-"${BOLD}${CYAN}${USER_NAME}@${HOST_NAME}${RESET}"
-""
-"${BOLD}${CYAN}OS${RESET}              ${OS}"
-"${BOLD}${CYAN}Kernel${RESET}          ${KERNEL}"
-"${BOLD}${CYAN}Architecture${RESET}    ${ARCH}"
-"${BOLD}${CYAN}CPU${RESET}             ${CPU}"
-"${BOLD}${CYAN}CPU Cores${RESET}       ${CORES}"
-"${BOLD}${CYAN}GPU${RESET}             ${GPU}"
-"${BOLD}${CYAN}Memory${RESET}           ${RAM_USED} / ${RAM_TOTAL}"
-"${BOLD}${CYAN}Disk${RESET}             ${DISK_USED} / ${DISK_TOTAL} (${DISK_PERCENT})"
-"${BOLD}${CYAN}Uptime${RESET}           ${UPTIME}"
-"${BOLD}${CYAN}Shell${RESET}            ${SHELL_NAME}"
-"${BOLD}${CYAN}Terminal${RESET}         ${TERM_NAME}"
-"${BOLD}${CYAN}Package Manager${RESET}  ${PACKAGE_MANAGER}"
-)
+if command_exists systemd-detect-virt; then
+    VIRTUALIZATION="$(systemd-detect-virt 2>/dev/null)"
 
-# -------------------------
-# Print
-# -------------------------
-
-printf "\n"
-
-MAX_LINES=${#INFO[@]}
-
-if [ ${#LOGO[@]} -gt "$MAX_LINES" ]; then
-    MAX_LINES=${#LOGO[@]}
+    if [ -z "$VIRTUALIZATION" ]; then
+        VIRTUALIZATION="None"
+    fi
+else
+    VIRTUALIZATION="Unknown"
 fi
 
-for ((i=0; i<MAX_LINES; i++)); do
-    LEFT="${LOGO[$i]:-}"
-    RIGHT="${INFO[$i]:-}"
+# -------------------------
+# Load average
+# -------------------------
+LOAD="Unknown"
 
-    # Keep the logo column fixed.
-    # Do NOT use ANSI-colored strings inside %-Ns.
-    printf "  %-40s  " "$LEFT"
-    printf "%b\n" "$RIGHT"
-done
+if [ -r /proc/loadavg ]; then
+    LOAD="$(awk '{print $1 "  " $2 "  " $3}' /proc/loadavg)"
+fi
+
+# -------------------------
+# Local IP
+# -------------------------
+IP_ADDRESS="Unknown"
+
+if command_exists hostname; then
+    IP_ADDRESS="$(hostname -I 2>/dev/null | awk '{print $1}')"
+fi
+
+IP_ADDRESS="${IP_ADDRESS:-Unknown}"
+
+# ============================================================
+# OUTPUT
+# ============================================================
+
+clear 2>/dev/null || true
 
 printf "\n"
-printf "${BOLD}${GREEN}SRNFetch${RESET} — system information displayed successfully.\n"
+
+printf "%s%s" "${BOLD}${CYAN}"
+cat <<'EOF'
+   _____ _____  _   _  ______ ______ _____ _______ _______ _____ _    _ 
+  / ____|  __ \| \ | | |  ____|  ____/ ____|__   __|__   __/ ____| |  | |
+ | (___ | |__) |  \| | | |__  | |__ | (___    | |     | | | |    | |__| |
+  \___ \|  _  /| . ` | |  __| |  __| \___ \   | |     | | | |    |  __  |
+  ____) | | \ \| |\  | | |____| |____ ____) |  | |    _| |_| |____| |  | |
+ |_____/|_|  \_\_| \_| |______|______|_____/   |_|   |_____\_____|_|  |_|
+EOF
+printf "%s\n" "${RESET}"
+
+printf "%s%s@%s%s\n" \
+    "${BOLD}${GREEN}" \
+    "$USER_NAME" \
+    "$HOST_NAME" \
+    "${RESET}"
+
+printf "%s\n" "=============================================="
+
+section "SYSTEM"
+
+info "OS" "$OS_NAME"
+info "Kernel" "$KERNEL"
+info "Architecture" "$ARCH"
+info "Virtualization" "$VIRTUALIZATION"
+
+section "HARDWARE"
+
+info "CPU" "$CPU"
+info "CPU Cores" "$CORES"
+info "GPU" "$GPU"
+
+section "MEMORY"
+
+info "RAM Used" "$RAM_USED"
+info "RAM Total" "$RAM_TOTAL"
+info "RAM Available" "$RAM_AVAILABLE"
+
+section "STORAGE"
+
+info "Disk Used" "$DISK_USED"
+info "Disk Total" "$DISK_TOTAL"
+info "Disk Free" "$DISK_FREE"
+info "Disk Usage" "$DISK_PERCENT"
+
+section "SESSION"
+
+info "Uptime" "$UPTIME"
+info "Shell" "$SHELL_NAME"
+info "Terminal" "$TERMINAL"
+info "Package Manager" "$PACKAGE_MANAGER"
+info "IP Address" "$IP_ADDRESS"
+info "Load Average" "$LOAD"
+
+printf "\n"
+printf "%s%sSRNFetch%s %sv1.0%s\n\n" \
+    "${BOLD}" \
+    "${GREEN}" \
+    "${RESET}" \
+    "${DIM}" \
+    "${RESET}"
