@@ -101,7 +101,7 @@ LOGO=(
 "        ███████║██║  ██║██║ ╚████║"
 "        ╚══════╝╚═╝  ╚═╝╚═╝  ╚═══╝"
 ""
-"        SRNFETCH"
+"        ${BOLD}SRNFETCH${RESET}"
 "        Linux System Information"
 )
 
@@ -117,19 +117,17 @@ INFO=(
 "${BOLD}${CYAN}CPU${RESET}             ${CPU}"
 "${BOLD}${CYAN}CPU Cores${RESET}       ${CORES}"
 "${BOLD}${CYAN}GPU${RESET}             ${GPU}"
-"${BOLD}${CYAN}Memory${RESET}          ${RAM_USED} / ${RAM_TOTAL}"
-"${BOLD}${CYAN}Disk${RESET}            ${DISK_USED} / ${DISK_TOTAL} (${DISK_PERCENT})"
-"${BOLD}${CYAN}Uptime${RESET}          ${UPTIME}"
-"${BOLD}${CYAN}Shell${RESET}           ${SHELL_NAME}"
-"${BOLD}${CYAN}Terminal${RESET}        ${TERM_NAME}"
-"${BOLD}${CYAN}Package Manager${RESET} ${PACKAGE_MANAGER}"
+"${BOLD}${CYAN}Memory${RESET}           ${RAM_USED} / ${RAM_TOTAL}"
+"${BOLD}${CYAN}Disk${RESET}             ${DISK_USED} / ${DISK_TOTAL} (${DISK_PERCENT})"
+"${BOLD}${CYAN}Uptime${RESET}           ${UPTIME}"
+"${BOLD}${CYAN}Shell${RESET}            ${SHELL_NAME}"
+"${BOLD}${CYAN}Terminal${RESET}         ${TERM_NAME}"
+"${BOLD}${CYAN}Package Manager${RESET}  ${PACKAGE_MANAGER}"
 )
 
 # -------------------------
 # Print
 # -------------------------
-
-LOGO_WIDTH=40
 
 printf "\n"
 
@@ -143,14 +141,10 @@ for ((i=0; i<MAX_LINES; i++)); do
     LEFT="${LOGO[$i]:-}"
     RIGHT="${INFO[$i]:-}"
 
-    # Color logo separately
-    if [ -n "$LEFT" ]; then
-        printf "${CYAN}%-40s${RESET}" "$LEFT"
-    else
-        printf "%-40s" ""
-    fi
-
-    printf "  %b\n" "$RIGHT"
+    # Keep the logo column fixed.
+    # Do NOT use ANSI-colored strings inside %-Ns.
+    printf "  %-40s  " "$LEFT"
+    printf "%b\n" "$RIGHT"
 done
 
 printf "\n"
